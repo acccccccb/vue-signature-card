@@ -1,33 +1,51 @@
 <template>
-  <div>
-    <div ref="scrollRef">
-      <div ref="signBox">
+    <div>
         <div class="canvasBox" :style="'width:'+ width +'px;height:'+height+'px;'">
-          <canvas
-                  :disabled="true"
-                  class="canvas"
-                  :width="canvasWidth"
-                  :height="canvasHeight"
-                  @mousedown="handleMouseDown"
-                  @mouseup="handleMouseUp"
-                  @mouseleave="handleMouseUp"
-                  @mousemove="handleMouseMove"
-                  @touchstart="handleTouchStart"
-                  @touchmove="handleTouchMove"
-                  ref="canvas">您当前浏览器不支持canvas，建议更换浏览器！</canvas>
+            <canvas
+                    :disabled="true"
+                    class="canvas"
+                    :width="canvasWidth"
+                    :height="canvasHeight"
+                    @mousedown="handleMouseDown"
+                    @mouseup="handleMouseUp"
+                    @mouseleave="handleMouseUp"
+                    @mousemove="handleMouseMove"
+                    @touchstart="handleTouchStart"
+                    @touchmove="handleTouchMove"
+                    ref="canvas">您当前浏览器不支持canvas，建议更换浏览器！</canvas>
         </div>
-        <button :disabled="btnDisable" @click="clearMap(true)" type="button" plain >重新签</button>
-        <button :disabled="btnDisable || pathHistory.length<10" type="button" @click="scrollBack">撤回</button>
-        <button :disabled="btnDisable || pathHistory.length<10" type="button" @click="saveMap">提交签名</button>
-      </div>
+        <slot name="tool" v-if="showButton">
+            <button :disabled="disabled" @click="clearMap(true)" type="button" plain >重新签</button>
+            <button :disabled="disabled || pathHistory.length<10" type="button" @click="scrollBack">撤回</button>
+            <button :disabled="disabled || pathHistory.length<10" type="button" @click="saveMap">提交签名</button>
+        </slot>
     </div>
-  </div>
 </template>
 
 <script>
 export default {
   name: 'VueSignatureCard',
     props:{
+        disabled:{
+            required:false,
+            type:Boolean,
+            default:false,
+        },
+        showButton:{
+            required:false,
+            type:Boolean,
+            default:true,
+        },
+        color:{
+            required:false,
+            type:String,
+            default:'#000',
+        },
+        lineWidth:{
+            required:false,
+            type:Number,
+            default:3,
+        },
         width:{
             required:false,
             type:Number,
@@ -38,7 +56,6 @@ export default {
             type:Number,
             default:200,
         },
-
         history:{
             required:false,
             type:String
@@ -91,7 +108,7 @@ export default {
     methods:{
         // 手机
         handleTouchStart:function(e){
-            if(this.readonly==false) {return false;}
+            if(this.readonly==false || this.disabled==true) {return false;}
             this.map.startX = e.changedTouches[0].clientX-this.map.offsetLeft;
             this.map.startY = e.changedTouches[0].clientY-this.map.offsetTop;
             if(this.pathHistory.length>0) {
@@ -106,26 +123,14 @@ export default {
             });
         },
         handleTouchMove:function(e){
-            if(this.readonly==false) {return false;}
+            if(this.readonly==false || this.disabled==true) {return false;}
             let x = e.changedTouches[0].clientX-this.map.offsetLeft;
             let y = e.changedTouches[0].clientY-this.map.offsetTop;
             this.drowToMap(x,y);
         },
-        clearMap:function(action){
-            this.pathHistory = [];
-            this.canvas.width = this.canvasWidth;
-            this.canvas.height = this.canvasHeight;
-            this.map.startX = 0;
-            this.map.startY = 0;
-            clearInterval(this.timmer);
-            this.timmer = null;
-            if(action===true) {
-                this.readonly = true;
-            }
-        },
         // pc
         handleMouseDown:function(e){
-            if(this.readonly==false) {return false;}
+            if(this.readonly==false || this.disabled==true) {return false;}
             this.map.startX = e.offsetX;
             this.map.startY = e.offsetY;
             if(this.pathHistory.length>0) {
@@ -141,14 +146,15 @@ export default {
             this.mouseDown = true;
         },
         handleMouseUp:function(e){
-            if(this.readonly==false) {return false;}
+            if(this.readonly==false || this.disabled==true) {return false;}
             this.mouseDown = false;
             this.map.startX = e.offsetX;
             this.map.startY = e.offsetY;
             this.pathHistory.push(-1,-1);
+            this.$emit('drawing',this.pathHistory);
         },
         handleMouseMove:function(e){
-            if(this.readonly==false) {return false;}
+            if(this.readonly==false || this.disabled==true) {return false;}
             if(this.mouseDown) {
                 this.drowToMap(e.offsetX,e.offsetY);
             }
@@ -161,8 +167,8 @@ export default {
                     y:y
                 });
             }
-            this.ctx.strokeStyle="#10aeff";
-            this.ctx.lineWidth=4;
+            this.ctx.strokeStyle=this.color;
+            this.ctx.lineWidth=this.lineWidth;
             this.ctx.moveTo(this.map.startX,this.map.startY);
             this.ctx.lineTo(x,y);
             this.ctx.stroke();
@@ -170,9 +176,8 @@ export default {
             this.map.startY = y;
         },
         // 保存
-        saveMap:function(){
+        saveMap:function(action,speed){
             let _this = this;
-            // this.btnDisable = true;
             this.readonly = false;
             this.canvas.toBlob(function(blob) {
                 console.log(blob);
@@ -185,44 +190,52 @@ export default {
                     blob:blob,
                 };
                 let history = [..._this.pathHistory];
-                _this.clearMap();
-                _this.showHistory(history,20);
-                console.log($result);
+                if(action===true) {
+                    _this.clearMap();
+                    _this.showHistory(history,speed?speed:0);
+                }
+                _this.$emit('success',$result);
             });
         },
         // 撤回
         scrollBack:function(){
             let history = [...this.pathHistory];
-            console.log(history);
             let len = history.length;
-            // for(var i=len;i>0;i--) {
-            //     let point = history[i];
-            //     if(point===-1) {
-            //         console.log('#');
-            //         return false;
-            //     } else {
-            //         console.log(i);
-            //     }
-            // }
-            this.clearMap(true);
-            history.forEach((i,item)=>{
+            let cut = false;
+            for(var i=len-1;i>0;i--) {
+                let point = history[i];
+                if(point!==-1 && cut===false) {
+                    cut = true;
+                } else if(cut===true && point===-1) {
+                    history = history.slice(0,i);
+                    this.clearMap();
+                    this.showHistoryQuick(history);
+                    this.pathHistory = history;
+                    return false;
+                } else {
+                    this.clearMap();
+                }
+            }
+        },
+        // 回放
+        showHistoryQuick:function(history){
+            history.forEach((item,i)=>{
                 this.map.startX = item.x;
                 this.map.startY = item.y;
-                if(item<1) {
-                    this.map.startX = item.x;
-                    this.map.startY = item.y;
-                } else {
-                    if(item.x>0 && item.y>0 && item.x>0 && item.y>0) {
-                        this.map.startX = history[i-1].x;
-                        this.map.startY = history[i-1].y;
-                        this.drowToMap(item.x,item.y,true);
+                if(i>0) {
+                    if(item<1) {
+                        this.map.startX = item.x;
+                        this.map.startY = item.y;
+                    } else {
+                        if(history[i-1].x>0 && history[i-1].y>0 && item.x>0 && item.y>0) {
+                            this.map.startX = history[i-1].x;
+                            this.map.startY = history[i-1].y;
+                            this.drowToMap(item.x,item.y,true);
+                        }
                     }
                 }
             });
-            // history = history.slice(0,len);
-            // this.showHistory(history);
         },
-        // 回放
         showHistory:function (historyObj,speed) {
             this.pathHistory = historyObj;
             let len = historyObj.length;
@@ -246,6 +259,19 @@ export default {
                     i++;
                 }
             },speed?speed:0);
+        },
+        // 清除
+        clearMap:function(action){
+            this.pathHistory = [];
+            this.canvas.width = this.canvasWidth;
+            this.canvas.height = this.canvasHeight;
+            this.map.startX = 0;
+            this.map.startY = 0;
+            clearInterval(this.timmer);
+            this.timmer = null;
+            if(action===true) {
+                this.readonly = true;
+            }
         },
     }
 }
